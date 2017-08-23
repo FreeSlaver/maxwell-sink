@@ -1,0 +1,16 @@
+{
+  "name": "maxwell-sink",
+  "config": {
+    "connector.class": "com.cimc.maxwell.sink.MySqlSinkConnector",
+    "tasks.max": 10,
+    "topics": "estation.db_ez.t_parcel_ext,estation.db_ez.t_box_ext",
+    "max.retries": 3,
+    "retry.backoff.ms": 1000,
+    "mysql.driver": "com.mysql.jdbc.Driver",
+    "mysql.username": "root",
+    "mysql.password": "root",
+    "mysql.url": "jdbc:mysql://localhost:3306?autoReconnect=true&characterEncoding=utf8&allowMultiQueries=true",
+    "topic.target.db": "estation.db_ez.t_parcel_ext:test,estation.db_ez.t_box_ext:test",
+    "filter.conditions": ""
+  }
+}
