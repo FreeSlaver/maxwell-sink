@@ -1,0 +1,103 @@
+//package com.cimc.sink.metadata;
+//
+//import com.alibaba.fastjson.JSON;
+//import com.cimc.maxwell.sink.metadata.DMLSQLAssembler;
+//import com.cimc.maxwell.sink.vo.RowMap;
+//import org.junit.Test;
+//
+///**
+// * Created by 00013708 on 2017/8/8.
+// */
+//public class SQLAssemblerTest {
+//
+//    @Test
+//    public void assembleDMLSql() {
+//        DMLSQLAssembler assembler = new DMLSQLAssembler();
+////        String insertSql = assembler.getDMLSql(getInsert());
+////        System.out.println(insertSql);
+//
+////        String updateSql = assembler.getDMLSql(getUpdate());
+////        System.out.println(updateSql);
+////
+///*        String deleteSql = assembler.getDMLSql(getDelete());
+//        System.out.println(deleteSql);*/
+//
+//    }
+//
+//    public RowMap getInsert() {
+//        String insert = "{\"database\":\"db_ez\",\"table\":\"t_parcel\",\"type\":\"insert\",\"ts\":1502173697,\"xid\":1137172,\"commit\":true,\"data\":{\"id\":\"518067A61820170808142817386326\",\"is_old\":0,\"package_id\":\"JJ2017080814281277\",\"sn\":\"518067A618\",\"box_id\":\"DC004000794009\",\"book_type\":\"user\",\"book_code\":\"h4yp\n" +
+//                "wS8EYecswhUkEM1vsQ==\",\"take_code\":\"NJjYgSnHyy+e2ww5o2MqLQ==\",\"retrieve_code\":\"1PXo77gXcM0C+w1F465O3Q==\",\"code_expire_time\":\"2017-08-15 14:28:17\",\"take_uid\":12345,\"take_mobile\":12345,\"pickup_uid\":12345,\"pickup_mobile\":12345,\"postman_uid\":518638,\"postman_mobile\":\"13750004136\"\n" +
+//                ",\"postman_name\":12345,\"company_id\":12345,\"reminder_num\":0,\"send_num\":0,\"app_send_num\":0,\"updater\":\"13750004136\",\"expire_time\":\"2020-05-04 14:28:17\",\"create_time\":\"2017-08-08 14:28:17\",\"take_time\":12345,\"update_time\":\"2017-08-08 14:28:17\",\"status\":\"book\",\n" +
+//                "\"cancel_book_time\":12345,\"book_expire_time\":\"2017-08-08 14:43:17\",\"box_type\":\"small\",\"channel_id\":1003,\"partner_cid\":0,\"business_type\":1,\"callback_url\":\"http://test.estationlife.com/open/express/api/callback.json?orderNo=JJ2017080814281277\",\"lock_time\":5}}";
+//
+//        RowMap maxwellVo = JSON.parseObject(insert, RowMap.class);
+//        return maxwellVo;
+//
+//    }
+//
+//    public RowMap getUpdate() {
+//        String update = "{\n" +
+//                "    \"database\": \"db_ez\",\n" +
+//                "    \"table\": \"t_parcel\",\n" +
+//                "    \"type\": \"update\",\n" +
+//                "    \"ts\": 1502177807,\n" +
+//                "    \"xid\": 1190035,\n" +
+//                "    \"commit\": true,\n" +
+//                "    \"data\": {\n" +
+//                "        \"id\": \"311100B02820170808153641177871\",\n" +
+//                "        \"is_old\": 0,\n" +
+//                "        \"package_id\": \"1645035944\",\n" +
+//                "        \"sn\": \"311100B028\",\n" +
+//                "        \"box_id\": \"DC004001392009\",\n" +
+//                "        \"book_type\": 12345,\n" +
+//                "        \"book_code\": \"dqYqm0tcFBqVVwHQxkTr0g==\",\n" +
+//                "        \"take_code\": \"4CvZPa6AAW1MyoZzWGIveA==\",\n" +
+//                "        \"retrieve_code\": \"X66cFTKpc+0HinU4v1apDA==\",\n" +
+//                "        \"code_expire_time\": \"2017-08-15 15:36:41\",\n" +
+//                "        \"take_uid\": 12345,\n" +
+//                "        \"take_mobile\": \"15098767654\",\n" +
+//                "        \"pickup_uid\": 12345,\n" +
+//                "        \"pickup_mobile\": 12345,\n" +
+//                "        \"postman_uid\": 200479,\n" +
+//                "        \"postman_mobile\": \"15825530865\",\n" +
+//                "        \"postman_name\": \"柯宇\",\n" +
+//                "        \"company_id\": 10032,\n" +
+//                "        \"reminder_num\": 0,\n" +
+//                "        \"send_num\": 0,\n" +
+//                "        \"app_send_num\": 0,\n" +
+//                "        \"updater\": \"15825530865\",\n" +
+//                "        \"expire_time\": \"2017-08-10 15:36:41\",\n" +
+//                "        \"create_time\": \"2017-08-08 15:36:41\",\n" +
+//                "        \"take_time\": 12345,\n" +
+//                "        \"update_time\": \"2017-08-08 15:36:48\",\n" +
+//                "        \"status\": \"inbox\",\n" +
+//                "        \"delivery_time\": \"2017-08-08 15:36:47\",\n" +
+//                "        \"cancel_book_time\": 12345,\n" +
+//                "        \"book_expire_time\": \"2017-08-08 15:56:41\",\n" +
+//                "        \"box_type\": \"small\",\n" +
+//                "        \"channel_id\": 1002,\n" +
+//                "        \"partner_cid\": 10032,\n" +
+//                "        \"business_type\": 1,\n" +
+//                "        \"callback_url\": 12345,\n" +
+//                "        \"lock_time\": 12345\n" +
+//                "    },\n" +
+//                "    \"old\": {\n" +
+//                "        \"update_time\": \"2017-08-08 15:36:41\",\n" +
+//                "        \"status\": \"book\",\n" +
+//                "        \"delivery_time\": 12345\n" +
+//                "    }\n" +
+//                "}";
+//
+//        RowMap maxwellVo = JSON.parseObject(update, RowMap.class);
+//        return maxwellVo;
+//
+//    }
+//
+//    public RowMap getDelete() {
+//        String delete = "{\"database\":\"db_ez\",\"table\":\"t_parcel\",\"type\":\"delete\",\"ts\":1502185159,\"xid\":1294056,\"commit\":true,\"data\":{\"id\":\"100000A01120160629150368\",\"is_old\":2,\"package_id\":\"sx8888888888\",\"sn\":\"100000A011\",\"box_id\":\"EZ004016145026\",\"book_code\":\"0\",\"take_code\":\"281587\",\"retrieve_code\":\"000000\",\"code_expire_time\":\"2016-07-22 10:19:40\",\"take_mobile\":\"13801174051\",\"postman_uid\":5357,\"postman_mobile\":\"18618307356\",\"postman_name\":\"乔德康\",\"company_id\":433,\"reminder_num\":15,\"expire_time\":\"2016-07-01 15:04:17\",\"create_time\":\"2016-08-10 09:26:14\",\"status\":\"exceptional\",\"delivery_time\":\"2016-06-29 15:04:17\",\"book_expire_time\":\"2016-06-01 11:55:39\",\"box_type\":\"1\",\"channel_id\":0,\"partner_cid\":0,\"business_type\":1}}";
+//
+//        RowMap maxwellVo = JSON.parseObject(delete, RowMap.class);
+//        return maxwellVo;
+//
+//    }
+//}

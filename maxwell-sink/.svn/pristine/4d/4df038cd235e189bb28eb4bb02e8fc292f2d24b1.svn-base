@@ -1,0 +1,170 @@
+package com.cimc.maxwell.sink.metadata;
+
+import com.alibaba.fastjson.JSON;
+import com.cimc.maxwell.sink.vo.RowMap;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.*;
+
+/**
+ * Created by 00013708 on 2017/8/9.
+ */
+public class MysqlDbWriter {
+    private static final Logger log = LoggerFactory.getLogger(MysqlDbWriter.class);
+
+    private Connection connection;
+    private int VALIDATE_CONNECTION_TIMEOUT = 1000;
+
+    private List<String> sqlBuffer = null;
+    private final MySqlSinkConfig config;
+
+    private final DMLSQLAssembler assembler;
+
+    public MysqlDbWriter(MySqlSinkConfig config) {
+        this.config = config;
+        Map<String,Map<String,String>>  map = initTablesPk(config.topics);
+        this.assembler = new DMLSQLAssembler(map);
+    }
+    //从maxwell db中查询出来，废弃
+    /*private Map<String,Map<String,String>> initTablesPk(String topics) {
+        if(StringUtils.isEmpty(topics)){
+            throw new IllegalArgumentException("topics empty");
+        }
+        Map<String,Map<String,String>>  map = new HashMap<>();
+        String[] topicArr = topics.split(",");
+        for(String topic:topicArr){
+            String[] arr = topic.split(",");
+            String dbName = arr[1];
+            String tbName = arr[2];
+            //从数据库中查询出对应的pk值
+            String sql = "select pk from `databases` d,`tables` t where d.id = t.database_id and d.`name` = ? and t.`name` = ?";
+
+        }
+
+    }*/
+    //TODO 从配置文件中读取PK
+    private Map<String,Map<String,String>> initTablesPk(String topics) {
+        return new HashMap<>();
+    }
+
+    //首先尝试获取一个连接，如果连接是非法的新建一个连接，此连接不释放，作为一个Cache的连接
+    public synchronized Connection getValidConnection() throws SQLException {
+        if (connection != null && connection.isValid(VALIDATE_CONNECTION_TIMEOUT)) {
+            return connection;
+        } else {
+            connection = createNewConnection();
+            return connection;
+        }
+    }
+
+    private Connection createNewConnection() {
+        try {
+            Class.forName(config.mysqlDriver);
+            Connection connection = DriverManager.getConnection(config.mysqlUrl, config.mysqlUsername,
+                    config.mysqlPassword);
+            return connection;
+        } catch (ClassNotFoundException e) {
+            log.error(e.getMessage(), e);
+        } catch (SQLException e) {
+            log.error(e.getMessage(), e);
+        }
+        return null;
+    }
+
+    //先做简单的单个单个的
+/*    public int write(String sql) throws SQLException {
+        if (StringUtils.isEmpty(sql)) {
+            return 0;
+        }
+        Connection connection = getValidConnection();
+
+        PreparedStatement ps = connection.prepareStatement(sql);
+        log.info("Execute SQL:{}", sql);
+        int updateCount = ps.executeUpdate();
+        ps.close();
+        return updateCount;
+    }*/
+
+    public void write2Buffer(String sql) throws SQLException {
+        //这个还要考虑不同的table，也就是不同的connection中执行？
+        //不同的表不同的buffer？不考虑那么多，就考虑一个表
+        if (sqlBuffer == null || sqlBuffer.isEmpty()) {
+            sqlBuffer = new ArrayList<>(config.batchSize);
+        }
+        sqlBuffer.add(sql);
+        if (sqlBuffer.size() == config.batchSize) {
+            flush(sqlBuffer);
+            sqlBuffer.clear();
+        }
+    }
+
+
+    public void batchWrite(Collection<SinkRecord> records) throws SQLException {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (SinkRecord record : records) {
+            String val = (String) record.value();
+            log.info("Record val:{}", val);
+            RowMap rowMap = JSON.parseObject(val, RowMap.class);
+            String sql = assembler.getSql(rowMap);
+
+            try {
+                if(StringUtils.isNotEmpty(sql)){
+                    write2Buffer(sql);
+                }
+            } catch (SQLException e) {
+                log.error(e.getMessage(), e);
+            }
+        }
+
+    }
+
+    /**
+     * 返回是否成功执行
+     *
+     * @param sqlBatch
+     * @return
+     * @throws SQLException
+     */
+    public boolean flush(List<String> sqlBatch) throws SQLException {
+        if (sqlBatch == null || sqlBatch.isEmpty()) {
+            return false;
+        }
+        Connection connection = getValidConnection();
+        connection.setAutoCommit(false);
+        Statement statement = connection.createStatement();
+        for (String sql : sqlBatch) {
+            statement.addBatch(sql);
+        }
+        int[] updateCoutArr = statement.executeBatch();
+
+        connection.commit();
+        statement.close();
+        if (updateCoutArr.length == sqlBatch.size()) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public synchronized void close() {
+        try {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+        } catch (SQLException e) {
+            log.error(e.getMessage(), e);
+        } finally {//强制释放
+            connection = null;
+        }
+    }
+
+}

@@ -1,0 +1,190 @@
+package com.cimc.maxwell.sink.db;
+
+import com.cimc.maxwell.sink.row.RowMap;
+import com.cimc.maxwell.sink.row.RowMapTypes;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Created by 00013708 on 2017/8/7.
+ */
+public class SqlAssembler {
+    private static final Logger log = LoggerFactory.getLogger(SqlAssembler.class);
+
+    private static final String BLANK_SPACE = " ";
+    private static final String BACK_QUOTE = "`";
+    private static final String SINGLE_QUOTE = "'";
+    private static final String EQUAL_SIGN = "=";
+
+    private final Map<String, String> tablesPKMap;
+
+    public SqlAssembler(String tablesPK) {
+        this.tablesPKMap = initTablesPkMap(tablesPK);
+    }
+
+    /**
+     * @param tablesPK example:tables.pk=db_ez.t_parcel:id,db_ez.t_box:box_id
+     * @return example: {"db_ez.t_parcel" : "id","db_ez.t_box" : "box_id"}
+     */
+    private Map<String, String> initTablesPkMap(String tablesPK) {
+        if (StringUtils.isEmpty(tablesPK)) {
+            log.warn("tablesPK config null");
+            throw new IllegalArgumentException("tablesPK config null");
+        }
+        final Map<String, String> map = new HashMap<>();
+        String[] tablePKPairs = tablesPK.split(",");
+        for (String pair : tablePKPairs) {
+            String[] arr = pair.split(":");
+            String dbTable = arr[0];
+            String pk = arr[1];
+            map.put(dbTable, pk);
+        }
+        return map;
+    }
+    public String getPk(String dbTable){
+        return tablesPKMap.get(dbTable);
+    }
+
+
+    public String getSql(RowMap rowMap) {
+        if (rowMap == null) {
+            return null;
+        }
+        String type = rowMap.getType();
+        if (StringUtils.isEmpty(type)) {
+            return null;
+        }
+        String sql = null;
+
+        if (RowMapTypes.isDDL(type)) {
+            sql = rowMap.getSql();
+        } else if (RowMapTypes.isDML(type)) {
+            sql = getDMLSql(rowMap);
+        }
+        return sql;
+    }
+
+    private String getDMLSql(RowMap rowMap) {
+        if (rowMap == null) {
+            return null;
+        }
+        String database = rowMap.getDatabase();
+        String table = rowMap.getTable();
+        String type = rowMap.getType();
+
+        Map<String, Object> data = rowMap.getData();
+        Map<String, Object> old = rowMap.getOld();
+
+        String pk = tablesPKMap.get(database + "." + table);
+        String dmlClause = getDMLClause(type, database, table);
+        String clause = getParamsClause(type, data, old, pk);
+        return dmlClause + BLANK_SPACE + clause;
+    }
+
+    private String getDMLClause(String type, String database, String table) {
+        if (StringUtils.isEmpty(type) || StringUtils.isEmpty(database) || StringUtils.isEmpty(table)) {
+            log.error("type:{},database:{},table:{}", type, database, table);
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (type.equalsIgnoreCase("insert")) {
+            sb.append("insert into");
+        } else if (type.equalsIgnoreCase("update")) {
+            sb.append("update");
+        } else if (type.equalsIgnoreCase("delete")) {
+            sb.append("delete from");
+        }
+        sb.append(BLANK_SPACE).append(database).append(".").append(table);
+        return sb.toString();
+    }
+
+    private String getParamsClause(String type, Map<String, Object> data, Map<String, Object> old, String pk) {
+        if (StringUtils.isEmpty(type)) {
+            log.error("type is null");
+            return null;
+        }
+        if (data == null || data.isEmpty()) {
+            log.error("data is null or empty");
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        if (type.equalsIgnoreCase("insert")) {
+            sb.append("set ");
+            //直接从data中取出值进行拼装
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                String field = entry.getKey();
+                String newVal = (String) data.get(field);
+                /**insert时，如果字段值是null，忽略**/
+                if (newVal != null) {
+                    //拼装字段
+                    sb.append(wrapBackQuote(field)).append(" = ").append(wrapSingleQuote(newVal)).append(",");
+                }
+            }
+            sb.deleteCharAt(sb.lastIndexOf(","));
+        } else if (type.equalsIgnoreCase("update")) {
+            sb.append("set ");
+            //从old中取出key，根据key从data中取出新值进行拼装
+            for (Map.Entry<String, Object> entry : old.entrySet()) {
+                String column = entry.getKey();
+                /**update时，原来有值，后面设置为null，不能忽略**/
+                Object newVal = data.get(column);
+                if (newVal == null) {
+                    //拼装字段
+                    sb.append(column).append(" = ").append(newVal).append(",");
+                } else {
+                    //拼装字段
+                    sb.append(column).append(" = ").append("'").append(newVal).append("'").append(",");
+                }
+            }
+            sb.deleteCharAt(sb.lastIndexOf(","));
+            //拼装where条件
+            sb.append(getWhereClause(pk, data, old));
+        } else if (type.equalsIgnoreCase("delete")) {
+            sb.append(getWhereClause(pk, data, old));
+        }
+        return sb.toString();
+    }
+
+    private String getWhereClause(String pk, Map<String, Object> data, Map<String, Object> old) {
+        StringBuilder sb = new StringBuilder("where 1 = 1");
+        if (StringUtils.isNotEmpty(pk)) {
+            //有的pk可能是联合主键
+            String[] pkArr = pk.split(",");
+            for (String pkStr : pkArr) {
+                sb.append(" and ").append(wrapBackQuote(pkStr)).append(" = ").append(wrapSingleQuote((String) data.get(pkStr)));
+            }
+            return sb.toString();
+        } else {
+            //对没有主键的，暂时将所有旧条件拼装起来
+            data.putAll(old);
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                String field = entry.getKey();
+                String fieldVal = (String) entry.getValue();
+                sb.append(wrapBackQuote(field)).append(" = ").append(wrapSingleQuote(fieldVal));
+            }
+            return sb.toString();
+        }
+    }
+
+    private String wrapBackQuote(String str) {
+        if (StringUtils.isEmpty(str)) {
+            return null;
+        } else {
+            return BACK_QUOTE + str + BACK_QUOTE;
+        }
+    }
+
+    private String wrapSingleQuote(String str) {
+        if (StringUtils.isEmpty(str)) {
+            return null;
+        } else {
+            return SINGLE_QUOTE + str + SINGLE_QUOTE;
+        }
+    }
+
+}

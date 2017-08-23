@@ -1,0 +1,218 @@
+package com.cimc.maxwell.sink.db;
+
+import com.alibaba.fastjson.JSON;
+import com.cimc.maxwell.sink.MySqlSinkConfig;
+import com.cimc.maxwell.sink.filter.ConditionFilter;
+import com.cimc.maxwell.sink.filter.DatabaseRedirector;
+import com.cimc.maxwell.sink.row.ExportRowMap;
+import com.cimc.maxwell.sink.row.RowMap;
+import com.cimc.maxwell.sink.row.RowMapPK;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.sql.*;
+import java.util.*;
+
+/**
+ * Created by 00013708 on 2017/8/9.
+ */
+public final class MySqlDbWriter {
+    private static final Logger log = LoggerFactory.getLogger(MySqlDbWriter.class);
+    private static final Logger datalog = LoggerFactory.getLogger("datalog");
+
+    private CachedConnectionHolder connectionHolder;
+
+    private final int batchSize;
+    private final SqlAssembler assembler;
+    private DatabaseRedirector dbRedirector;
+    private final ConditionFilter filter;
+
+    private final Set<Long> xidSet;
+
+    public MySqlDbWriter(MySqlSinkConfig config) {
+        this.batchSize = config.mysqlBatchSize;
+        this.connectionHolder = new CachedConnectionHolder(config.mysqlUsername, config.mysqlPassword, config.mysqlUrl, config.mysqlDriver);
+
+        this.assembler = new SqlAssembler();
+        this.dbRedirector = new DatabaseRedirector(config.topicTargetDB);
+        this.filter = new ConditionFilter(config.filterConditions);
+        xidSet = new HashSet<>();
+    }
+
+    public void batchWrite(final Collection<SinkRecord> records) throws SQLException {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<String> sqlList = new ArrayList<>();
+        for (SinkRecord record : records) {
+            String topic = record.topic();
+            /**没有pk的key是多少？**/
+            String key = (String) record.key();
+            String val = (String) record.value();
+            log.info("===>>>topic:{},partition:{},offset:{}", topic, record.kafkaPartition(), record.kafkaOffset());
+            log.info("===>>>key:{},value:{}", record.key(), record.value());
+
+            RowMapPK rowMapPK = getRowMapPK(key);
+            RowMap rowMap = JSON.parseObject(val, RowMap.class);
+            //用作去重
+            Long xid = rowMap.getXid();
+            if (xidSet.contains(xid)) {
+                log.warn("===>>>duplicate xid:{},rowMap:{}", xid, rowMap.toString());
+                continue;
+            } else {
+                xidSet.add(xid);
+            }
+            /**数据过滤**/
+            if (filter.match(rowMap)) {
+                //将新老数据输出到指定文件
+                ExportRowMap exportRowMap = new ExportRowMap(rowMapPK, rowMap);
+                datalog.info(exportRowMap.toString());
+                rowMap = dbRedirector.redirectDb(topic, rowMap);
+                log.info("===>>>Assembler RowMap:{}", rowMap.toString());
+                String sql = assembler.getSql(rowMapPK, rowMap);
+                log.info("===>>>Assembler GET SQL:{}", sql);
+                if (StringUtils.isNotEmpty(sql)) {
+                    if (insertRowExist(rowMapPK, rowMap)) {
+                        log.info("===>>>INSERT ROW EXIST,IGNORE INSERT SQL:{}", sql);
+                    } else {
+                        sqlList.add(sql);
+                    }
+                }
+            }
+        }
+        //这个地方好像还是有问题，就是这个offset和connection commit的问题。
+        //假设之前flush了几次，然后失败了，这个其他的都提交了，但是这个时候抛出异常，offset是没有提交的
+        batchWrite(sqlList);
+    }
+
+    private void batchWrite(final List<String> sqlList) throws SQLException {
+        if (sqlList == null || sqlList.isEmpty()) {
+            return;
+        }
+        //这个地方，鸟connection有问题啊
+        Connection connection = connectionHolder.getValidConnection();
+        connection.setAutoCommit(false);
+
+        final List<String> sqlBuffer = new ArrayList<>(batchSize);
+        for (String sql : sqlList) {
+            sqlBuffer.add(sql);
+            if (sqlBuffer.size() >= batchSize) {
+                flush(connection, sqlBuffer);
+                sqlBuffer.clear();
+            }
+        }
+        //最后剩余的没满buffer
+        flush(connection, sqlBuffer);
+
+        connection.commit();
+    }
+
+    private RowMapPK getRowMapPK(String recordKey) {
+        if (StringUtils.isEmpty(recordKey)) {
+            return null;
+        }
+        Map<String, Object> rowMapKey = JSON.parseObject(recordKey);
+        rowMapKey.remove("database");
+        rowMapKey.remove("table");
+        //剩下唯一的元素
+        String pkColumns = null;
+        String pkVal = null;
+        for (Map.Entry<String, Object> entry : rowMapKey.entrySet()) {
+            String key = entry.getKey();
+            //得到所有的PK字段，可能是联合主键
+            pkColumns = key.replace("pk.", "");
+            pkVal = (String) entry.getValue();
+            break;
+        }
+        RowMapPK rowMapPK = new RowMapPK(pkColumns, pkVal);
+        log.info("===>getRowMapPK:{}", rowMapPK.toString());
+        return rowMapPK;
+    }
+
+
+    public void flush(final Connection connection, final List<String> sqlBatch) throws SQLException {
+        if (sqlBatch == null || sqlBatch.isEmpty()) {
+            return;
+        }
+        Statement statement = connection.createStatement();
+        for (String sql : sqlBatch) {
+            log.info("===>>>statement addBatch sql:{}", sql);
+            statement.addBatch(sql);
+        }
+        int[] updateCountArr = statement.executeBatch();
+        if (updateCountArr.length != sqlBatch.size()) {
+            throw new ConnectException(String.format("updateCountArr size:(%d) not equals to sqlBatch size:(%d)", updateCountArr.length, sqlBatch.size()));
+        }
+        statement.close();
+    }
+
+    public synchronized void closeQuietly() {
+        this.connectionHolder.closeQuietly();
+    }
+
+    //从maxwell db中查询出来，废弃
+    /*private Map<String,Map<String,String>> initTablesPk(String topics) {
+        if(StringUtils.isEmpty(topics)){
+            throw new IllegalArgumentException("topics empty");
+        }
+        Map<String,Map<String,String>>  map = new HashMap<>();
+        String[] topicArr = topics.split(",");
+        for(String topic:topicArr){
+            String[] arr = topic.split(",");
+            String dbName = arr[1];
+            String tbName = arr[2];
+            //从数据库中查询出对应的pk值
+            String sql = "select pk from `databases` d,`tables` t where d.id = t.database_id and d.`name` = ? and t.`name` = ?";
+        }
+    }*/
+
+    public int write(String sql) throws SQLException {
+        if (StringUtils.isEmpty(sql)) {
+            return 0;
+        }
+        Connection connection = connectionHolder.getValidConnection();
+        Statement statement = connection.createStatement();
+        log.info("===>Execute SQL:{}", sql);
+        int updateCount = statement.executeUpdate(sql);
+        statement.close();
+        return updateCount;
+    }
+
+    public boolean insertRowExist(RowMapPK rowMapPK, RowMap rowMap) throws SQLException {
+        if (rowMap == null) {
+            return false;
+        }
+        String type = rowMap.getType();
+        if (!type.equalsIgnoreCase("INSERT")) {
+            return false;
+        }
+        String selectSql = assembler.getSelectSql(rowMapPK, rowMap);
+        if (StringUtils.isEmpty(selectSql)) {
+            return false;
+        }
+        Connection connection = connectionHolder.getValidConnection();
+        Statement statement = connection.createStatement();
+        ResultSet resultSet = null;
+        log.info("===>insertRowExist SELECT SQL:{}", selectSql);
+        boolean flag = false;
+        try {
+            resultSet = statement.executeQuery(selectSql);
+            flag = resultSet.next();
+        } catch (SQLException e) {
+            log.error(e.getMessage(), e);
+        } finally {
+            try {
+                resultSet.close();
+            } catch (SQLException e) {
+            }
+            try {
+                statement.close();
+            } catch (SQLException e) {
+            }
+        }
+        return flag;
+    }
+}

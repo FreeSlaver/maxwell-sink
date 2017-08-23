@@ -1,0 +1,80 @@
+package com.cimc.maxwell.sink.filter;
+
+import com.alibaba.fastjson.JSON;
+import com.cimc.maxwell.sink.row.RowMap;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+
+/**
+ * Created by 00013708 on 2017/8/11.
+ */
+public class ConditionFilter {
+    private static final Logger log = LoggerFactory.getLogger(ConditionFilter.class);
+    private final Map<String, Set<String>> conditionsMap;
+
+    public ConditionFilter(final String filterConditions) {
+        this.conditionsMap = initConditionsMap(filterConditions);
+    }
+
+    private Map<String, Set<String>> initConditionsMap(String filterConditions) {
+        if (StringUtils.isEmpty(filterConditions)) {
+            log.warn("filterConditions config null");
+            return null;
+        }
+        Map<String, Set<String>> map = new HashMap<>();
+        String[] conditionPairs = filterConditions.split(";");
+        for (String condition : conditionPairs) {
+            String[] arr = condition.split(":");
+            String key = arr[0];
+            String val = arr[1];
+            String[] valArr = val.split(",");
+            Set<String> set = new HashSet<String>(Arrays.asList(valArr));
+            map.put(key, set);
+        }
+        log.info("initConditionsMap success,values:{}", JSON.toJSONString(map));
+        return map;
+    }
+
+    public boolean match(RowMap rowMap) {
+        if (rowMap == null) {
+            return false;
+        }
+        if (conditionsMap == null || conditionsMap.isEmpty()) {
+            return true;
+        }
+        Map<String, String> data = rowMap.getData();
+        if (data == null || data.isEmpty()) {
+            return false;
+        }
+
+        //遍历条件，所有满足返回真
+        boolean fitAllConditions = true;
+        for (Map.Entry<String, Set<String>> entry : conditionsMap.entrySet()) {
+            String key = entry.getKey();
+            Set<String> val = entry.getValue();
+            //得到data中的实际值
+            String dataVal = data.get(key);
+            if (!val.contains(dataVal)) {
+                fitAllConditions = false;
+                break;
+            }
+        }
+        return fitAllConditions;
+    }
+
+    public static void main(String[] args) {
+        String filterConditions = "sn:100000A011,100000A012,100000A013";
+        ConditionFilter filter = new ConditionFilter(filterConditions);
+
+        RowMap rowMap = new RowMap();
+        Map<String, String> dataMap = new HashMap<>();
+        dataMap.put("sn", "100000A011");
+        rowMap.setData(dataMap);
+
+        boolean match = filter.match(rowMap);
+        System.out.println(match);
+    }
+}
