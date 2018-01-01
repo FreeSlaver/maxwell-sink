@@ -1,16 +1,17 @@
 {
-  "name": "maxwell-sink",
+  "name": "test",
   "config": {
     "connector.class": "com.cimc.maxwell.sink.MySqlSinkConnector",
-    "tasks.max": 10,
+    "tasks.max": 5,
     "topics": "estation.db_ez.t_parcel_ext,estation.db_ez.t_box_ext",
     "max.retries": 3,
     "retry.backoff.ms": 1000,
     "mysql.driver": "com.mysql.jdbc.Driver",
-    "mysql.username": "root",
-    "mysql.password": "root",
-    "mysql.url": "jdbc:mysql://localhost:3306?autoReconnect=true&characterEncoding=utf8&allowMultiQueries=true",
-    "topic.target.db": "estation.db_ez.t_parcel_ext:test,estation.db_ez.t_box_ext:test",
-    "filter.conditions": ""
+    "mysql.username": "estation",
+    "mysql.password": "sdnnysqt@lb",
+    "mysql.url": "jdbc:mysql://10.33.1.13:3306?autoReconnect=true&characterEncoding=utf8&allowMultiQueries=true",
+    "dbtables": "{\"db_ez.t_parcel\":\"db_ez.t_parcel\"}",
+    "field.filters": "{\"db_ez.t_term\" : {\"sn\" : [\"100000A011\",\"100000A012\",\"100000A013\"]}",
+    "dml.filters": ""
   }
 }
