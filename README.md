@@ -11,6 +11,6 @@ For more details,please visit [Maxwell's daemon](http://maxwells-daemon.io/)
      
 # How to use maxwell-sink
 
-Just read the **maxwell-sink部署文档.docx** and modify the maxwell-sink.json to fit your needs.
+Just read the **maxwell-sink-deploy.docx** and modify the maxwell-sink.json to fit your needs.
 
    
